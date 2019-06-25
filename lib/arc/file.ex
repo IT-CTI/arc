@@ -1,5 +1,5 @@
 defmodule Arc.File do
-  defstruct [:path, :file_name, :binary]
+  defstruct [:path, :file_name, :binary, :mime_type]
 
   def generate_temporary_path(file \\ nil) do
     extension = Path.extname((file && file.path) || "")
@@ -9,7 +9,7 @@ defmodule Arc.File do
       |> Base.encode32()
       |> Kernel.<>(extension)
 
-    Path.join(System.tmp_dir, file_name)
+    Path.join(System.tmp_dir(), file_name)
   end
 
   # Given a remote file
@@ -18,27 +18,37 @@ defmodule Arc.File do
     filename = Path.basename(uri.path)
 
     case save_file(uri, filename) do
-      {:ok, local_path} -> %Arc.File{path: local_path, file_name: filename}
-      :error -> {:error, :invalid_file_path}
+      {:ok, {local_path, mime_type}} ->
+        %Arc.File{path: local_path, file_name: filename, mime_type: mime_type}
+
+      :error ->
+        {:error, :invalid_file_path}
     end
-end
+  end
 
   # Accepts a path
   def new(path) when is_binary(path) do
     case File.exists?(path) do
-      true -> %Arc.File{path: path, file_name: Path.basename(path)}
-      false -> {:error, :invalid_file_path}
+      true ->
+        %Arc.File{path: path, file_name: Path.basename(path), mime_type: MIME.from_path(path)}
+
+      false ->
+        {:error, :invalid_file_path}
     end
   end
 
   def new(%{filename: filename, binary: binary}) do
-    %Arc.File{binary: binary, file_name: Path.basename(filename)}
+    %Arc.File{
+      binary: binary,
+      file_name: Path.basename(filename),
+      mime_type: MIME.from_path(filename)
+    }
   end
 
   # Accepts a map conforming to %Plug.Upload{} syntax
   def new(%{filename: filename, path: path}) do
     case File.exists?(path) do
-      true -> %Arc.File{path: path, file_name: filename}
+      true -> %Arc.File{path: path, file_name: filename, mime_type: MIME.from_path(path)}
       false -> {:error, :invalid_file_path}
     end
   end
@@ -62,17 +72,19 @@ end
       |> Kernel.<>(Path.extname(filename))
 
     case save_temp_file(local_path, uri) do
-      :ok -> {:ok, local_path}
+      {:ok, mime_type} -> {:ok, {local_path, mime_type}}
       _ -> :error
     end
   end
 
   defp save_temp_file(local_path, remote_path) do
-    remote_file = get_remote_path(remote_path)
-
-    case remote_file do
-      {:ok, body} -> File.write(local_path, body)
-      {:error, error} -> {:error, error}
+    with {:ok, headers, response_ref} <- get_remote_path(remote_path),
+         {:ok, body} <- get_body(response_ref),
+         {:ok, mime_type} <- get_mime_type(headers),
+         :ok <- File.write(local_path, body) do
+      {:ok, mime_type}
+    else
+      error -> error
     end
   end
 
@@ -89,7 +101,7 @@ end
       timeout: Application.get_env(:arc, :timeout, 10_000),
       max_retries: Application.get_env(:arc, :max_retries, 3),
       backoff_factor: Application.get_env(:arc, :backoff_factor, 1000),
-      backoff_max: Application.get_env(:arc, :backoff_max, 30_000),
+      backoff_max: Application.get_env(:arc, :backoff_max, 30_000)
     ]
 
     request(remote_path, options)
@@ -97,14 +109,17 @@ end
 
   defp request(remote_path, options, tries \\ 0) do
     case :hackney.get(URI.to_string(remote_path), [], "", options) do
-      {:ok, 200, _headers, client_ref} -> :hackney.body(client_ref)
+      {:ok, 200, headers, client_ref} ->
+        {:ok, headers, client_ref}
+
       {:error, %{reason: :timeout}} ->
         case retry(tries, options) do
           {:ok, :retry} -> request(remote_path, options, tries + 1)
           {:error, :out_of_tries} -> {:error, :timeout}
         end
 
-      _ -> {:error, :arc_httpoison_error}
+      _ ->
+        {:error, :arc_httpoison_error}
     end
   end
 
@@ -116,7 +131,25 @@ end
         :timer.sleep(backoff)
         {:ok, :retry}
 
-      true -> {:error, :out_of_tries}
+      true ->
+        {:error, :out_of_tries}
+    end
+  end
+
+  defp get_body(response_ref), do: :hackney.body(response_ref)
+
+  defp get_mime_type(headers) do
+    Enum.find(headers, fn
+      {"Content-Type", _} -> true
+      _ -> false
+    end)
+    |> case do
+      {"Content-Type", value} ->
+        [mime_type | _] = String.split(value, ";")
+        {:ok, mime_type}
+
+      nil ->
+        MIME.from_path("")
     end
   end
 end

@@ -31,7 +31,7 @@ defmodule Arc.Mixfile do
     [
       applications: [
         :logger,
-        :hackney,
+        :hackney
       ] ++ applications(Mix.env)
     ]
   end
@@ -42,6 +42,7 @@ defmodule Arc.Mixfile do
   defp deps do
     [
       {:hackney, "~> 1.0"},
+      {:mime, "~> 1.2"},
 
       # If using Amazon S3
       {:ex_aws, "~> 2.0", optional: true},
