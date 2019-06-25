@@ -78,9 +78,9 @@ defmodule Arc.File do
   end
 
   defp save_temp_file(local_path, remote_path) do
-    with {:ok, headers, response_ref} <- get_remote_path(remote_path),
+    with {:ok, target_path, response_ref} <- get_remote_path(remote_path),
          {:ok, body} <- get_body(response_ref),
-         {:ok, mime_type} <- get_mime_type(headers),
+         {:ok, mime_type} <- get_mime_type(target_path),
          :ok <- File.write(local_path, body) do
       {:ok, mime_type}
     else
@@ -95,7 +95,7 @@ defmodule Arc.File do
   # :backoff_factor - a backoff factor to apply between attempts, in milliseconds
   defp get_remote_path(remote_path) do
     options = [
-      follow_redirect: true,
+      follow_redirect: false,
       recv_timeout: Application.get_env(:arc, :recv_timeout, 5_000),
       connect_timeout: Application.get_env(:arc, :connect_timeout, 10_000),
       timeout: Application.get_env(:arc, :timeout, 10_000),
@@ -109,8 +109,13 @@ defmodule Arc.File do
 
   defp request(remote_path, options, tries \\ 0) do
     case :hackney.get(URI.to_string(remote_path), [], "", options) do
-      {:ok, 200, headers, client_ref} ->
-        {:ok, headers, client_ref}
+      {:ok, 302, _headers, client_ref} ->
+        :hackney.location(client_ref)
+        |> URI.parse()
+        |> request(options, tries)
+
+      {:ok, 200, _headers, client_ref} ->
+        {:ok, remote_path, client_ref}
 
       {:error, %{reason: :timeout}} ->
         case retry(tries, options) do
@@ -138,18 +143,8 @@ defmodule Arc.File do
 
   defp get_body(response_ref), do: :hackney.body(response_ref)
 
-  defp get_mime_type(headers) do
-    Enum.find(headers, fn
-      {"Content-Type", _} -> true
-      _ -> false
-    end)
-    |> case do
-      {"Content-Type", value} ->
-        [mime_type | _] = String.split(value, ";")
-        {:ok, mime_type}
-
-      nil ->
-        MIME.from_path("")
-    end
+  defp get_mime_type(remote_path) do
+    %{path: path} = URI.parse(remote_path)
+    {:ok, MIME.from_path(to_string(path))}
   end
 end
