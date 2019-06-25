@@ -48,7 +48,7 @@ defmodule Arc.File do
   # Accepts a map conforming to %Plug.Upload{} syntax
   def new(%{filename: filename, path: path}) do
     case File.exists?(path) do
-      true -> %Arc.File{path: path, file_name: filename, mime_type: MIME.from_path(path)}
+      true -> %Arc.File{path: path, file_name: filename, mime_type: MIME.from_path(filename)}
       false -> {:error, :invalid_file_path}
     end
   end
