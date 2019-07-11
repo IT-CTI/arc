@@ -1,5 +1,5 @@
 defmodule Arc.File do
-  defstruct [:path, :file_name, :binary, :mime_type]
+  defstruct [:path, :file_name, :binary, :mime_type, :attachment_name]
 
   def generate_temporary_path(file \\ nil) do
     extension = Path.extname((file && file.path) || "")
@@ -13,10 +13,9 @@ defmodule Arc.File do
   end
 
   # Given a remote file
-  def new(remote_path = "http" <> _) do
+  def new(remote_path = "http" <> _, scope) do
     uri = URI.parse(remote_path)
-    filename = Path.basename(uri.path)
-
+    filename = scope.attachment_name || Path.basename(uri.path)
     case save_file(uri, filename) do
       {:ok, {local_path, mime_type}} ->
         %Arc.File{path: local_path, file_name: filename, mime_type: mime_type}
