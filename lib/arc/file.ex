@@ -2,6 +2,7 @@ defmodule Arc.File do
   defstruct [:path, :file_name, :binary, :mime_type, :attachment_name]
 
   def generate_temporary_path(file \\ nil) do
+
     extension = Path.extname((file && file.path) || "")
 
     file_name =
@@ -15,7 +16,9 @@ defmodule Arc.File do
   # Given a remote file
   def new(remote_path = "http" <> _, scope) do
     uri = URI.parse(remote_path)
+
     filename = scope.attachment_name || Path.basename(uri.path)
+
     case save_file(uri, filename) do
       {:ok, {local_path, mime_type}} ->
         %Arc.File{path: local_path, file_name: filename, mime_type: mime_type}
@@ -26,7 +29,7 @@ defmodule Arc.File do
   end
 
   # Accepts a path
-  def new(path) when is_binary(path) do
+  def new(path, _scope) when is_binary(path) do
     case File.exists?(path) do
       true ->
         %Arc.File{path: path, file_name: Path.basename(path), mime_type: MIME.from_path(path)}
@@ -36,7 +39,7 @@ defmodule Arc.File do
     end
   end
 
-  def new(%{filename: filename, binary: binary}) do
+  def new(%{filename: filename, binary: binary}, _scope) do
     %Arc.File{
       binary: binary,
       file_name: Path.basename(filename),
@@ -45,7 +48,7 @@ defmodule Arc.File do
   end
 
   # Accepts a map conforming to %Plug.Upload{} syntax
-  def new(%{filename: filename, path: path}) do
+  def new(%{filename: filename, path: path}, _scope) do
     case File.exists?(path) do
       true -> %Arc.File{path: path, file_name: filename, mime_type: MIME.from_path(filename)}
       false -> {:error, :invalid_file_path}

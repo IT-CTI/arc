@@ -55,7 +55,7 @@ defmodule Arc.Actions.Store do
       Enum.filter(responses, fn resp -> elem(resp, 0) == :error end)
       |> Enum.map(fn err -> elem(err, 1) end)
 
-    if Enum.empty?(errors), do: {:ok, filename}, else: {:error, errors}
+    if Enum.empty?(errors), do: List.last(responses) || {:ok, filename}, else: {:error, errors}
   end
 
   defp version_timeout do
@@ -86,13 +86,13 @@ defmodule Arc.Actions.Store do
       {:ok, nil} ->
         {:ok, nil}
 
-      {:ok, file} ->
-        file_name =
-          Arc.Definition.Versioning.resolve_file_name(definition, version, {file, scope})
+        {:ok, file} ->
+          file_name =
+            Arc.Definition.Versioning.resolve_file_name(definition, version, {file, scope})
 
-        file = %Arc.File{file | file_name: file_name}
-        result = definition.__storage.put(definition, version, {file, scope})
-        result
+          file = %Arc.File{file | file_name: file_name}
+          result = definition.__storage.put(definition, version, {file, scope})
+          result
     end
   end
 end
