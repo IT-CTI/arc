@@ -35,13 +35,13 @@ defmodule Arc.Actions.Store do
       |> ensure_all_success
       |> Enum.map(fn {v, r} -> async_put_version(definition, v, {r, scope}) end)
       |> Enum.map(fn task -> Task.await(task, version_timeout()) end)
-      |> handle_responses(file.file_name)
+      |> handle_responses(file.file_name, scope)
     else
       definition.__versions
       |> Enum.map(fn version -> process_version(definition, version, {file, scope}) end)
       |> ensure_all_success
       |> Enum.map(fn {version, result} -> put_version(definition, version, {result, scope}) end)
-      |> handle_responses(file.file_name)
+      |> handle_responses(file.file_name, scope)
     end
   end
 
@@ -50,12 +50,18 @@ defmodule Arc.Actions.Store do
     if Enum.empty?(errors), do: responses, else: errors
   end
 
-  defp handle_responses(responses, filename) do
+  defp handle_responses(responses, filename, scope) do
     errors =
       Enum.filter(responses, fn resp -> elem(resp, 0) == :error end)
       |> Enum.map(fn err -> elem(err, 1) end)
 
-    if Enum.empty?(errors), do: List.last(responses) || {:ok, filename}, else: {:error, errors}
+    filename =
+      case scope.attachment_name do
+        nil -> filename
+        _res -> responses |> List.first |> elem(1)
+      end
+      
+    if Enum.empty?(errors), do: {:ok, filename}, else: {:error, errors}
   end
 
   defp version_timeout do
