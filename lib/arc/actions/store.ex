@@ -6,7 +6,7 @@ defmodule Arc.Actions.Store do
   end
 
   def store(definition, {file, scope}) when is_binary(file) or is_map(file) do
-    put(definition, {Arc.File.new(file), scope})
+    put(definition, {Arc.File.new(file, scope), scope})
   end
 
   def store(definition, filepath) when is_binary(filepath) or is_map(filepath) do
@@ -35,13 +35,13 @@ defmodule Arc.Actions.Store do
       |> ensure_all_success
       |> Enum.map(fn {v, r} -> async_put_version(definition, v, {r, scope}) end)
       |> Enum.map(fn task -> Task.await(task, version_timeout()) end)
-      |> handle_responses(file.file_name)
+      |> handle_responses(file.file_name, scope)
     else
       definition.__versions
       |> Enum.map(fn version -> process_version(definition, version, {file, scope}) end)
       |> ensure_all_success
       |> Enum.map(fn {version, result} -> put_version(definition, version, {result, scope}) end)
-      |> handle_responses(file.file_name)
+      |> handle_responses(file.file_name, scope)
     end
   end
 
@@ -50,11 +50,17 @@ defmodule Arc.Actions.Store do
     if Enum.empty?(errors), do: responses, else: errors
   end
 
-  defp handle_responses(responses, filename) do
+  defp handle_responses(responses, filename, scope) do
     errors =
       Enum.filter(responses, fn resp -> elem(resp, 0) == :error end)
       |> Enum.map(fn err -> elem(err, 1) end)
 
+    filename =
+      case scope.attachment_name do
+        nil -> filename
+        _res -> responses |> List.first |> elem(1)
+      end
+      
     if Enum.empty?(errors), do: {:ok, filename}, else: {:error, errors}
   end
 
@@ -86,13 +92,13 @@ defmodule Arc.Actions.Store do
       {:ok, nil} ->
         {:ok, nil}
 
-      {:ok, file} ->
-        file_name =
-          Arc.Definition.Versioning.resolve_file_name(definition, version, {file, scope})
+        {:ok, file} ->
+          file_name =
+            Arc.Definition.Versioning.resolve_file_name(definition, version, {file, scope})
 
-        file = %Arc.File{file | file_name: file_name}
-        result = definition.__storage.put(definition, version, {file, scope})
-        result
+          file = %Arc.File{file | file_name: file_name}
+          result = definition.__storage.put(definition, version, {file, scope})
+          result
     end
   end
 end
