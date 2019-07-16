@@ -14,14 +14,11 @@ defmodule Arc.File do
 
   # Given a remote file
   def new(remote_path = "http" <> _) do
-    uri = URI.parse(remote_path)
-    filename = Path.basename(uri.path)
-
-    case save_file(uri, filename) do
-      {:ok, {local_path, mime_type}} ->
+    case save_file(remote_path) do
+      {:ok, {local_path, filename, mime_type}} ->
         %Arc.File{path: local_path, file_name: filename, mime_type: mime_type}
 
-      :error ->
+      _error ->
         {:error, :invalid_file_path}
     end
   end
@@ -66,26 +63,21 @@ defmodule Arc.File do
     }
   end
 
-  defp save_file(uri, filename) do
-    local_path =
-      generate_temporary_path()
-      |> Kernel.<>(Path.extname(filename))
-
-    case save_temp_file(local_path, uri) do
-      {:ok, mime_type} -> {:ok, {local_path, mime_type}}
-      _ -> :error
-    end
-  end
-
-  defp save_temp_file(local_path, remote_path) do
+  defp save_file(remote_path) do
     with {:ok, target_path, response_ref} <- get_remote_path(remote_path),
          {:ok, body} <- get_body(response_ref),
          {:ok, mime_type} <- get_mime_type(target_path),
-         :ok <- File.write(local_path, body) do
-      {:ok, mime_type}
-    else
-      error -> error
+         {:ok, local_path, filename} <- save_temp_file(target_path, body) do
+      {:ok, {local_path, filename, mime_type}}
     end
+  end
+
+  defp save_temp_file(remote_path, body) do
+    %{path: path} = URI.parse(remote_path)
+    original_filename = Path.basename(path)
+    local_path = generate_temporary_path() <> Path.extname(original_filename)
+
+    with :ok <- File.write(local_path, body), do: {:ok, local_path, original_filename}
   end
 
   # hakney :connect_timeout - timeout used when establishing a connection, in milliseconds
@@ -108,14 +100,16 @@ defmodule Arc.File do
   end
 
   defp request(remote_path, options, tries \\ 0) do
-    case :hackney.get(URI.to_string(remote_path), [], "", options) do
+    case :hackney.get(remote_path, [], "", options) do
       {:ok, 302, _headers, client_ref} ->
         :hackney.location(client_ref)
-        |> URI.parse()
         |> request(options, tries)
 
-      {:ok, 200, _headers, client_ref} ->
-        {:ok, remote_path, client_ref}
+      {:ok, 200, headers, client_ref} ->
+        case refresh_redirect(headers) do
+          false -> {:ok, remote_path, client_ref}
+          remote_path -> request(remote_path, options, tries)
+        end
 
       {:error, %{reason: :timeout}} ->
         case retry(tries, options) do
@@ -146,5 +140,14 @@ defmodule Arc.File do
   defp get_mime_type(remote_path) do
     %{path: path} = URI.parse(remote_path)
     {:ok, MIME.from_path(to_string(path))}
+  end
+
+  defp refresh_redirect(headers) do
+    headers = :hackney_headers_new.from_list(headers)
+
+    case :hackney_headers_new.get_value("refresh", headers) do
+      :undefined -> false
+      value -> String.split(value, "=", parts: 2) |> List.last()
+    end
   end
 end
