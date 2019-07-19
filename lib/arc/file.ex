@@ -93,7 +93,9 @@ defmodule Arc.File do
       timeout: Application.get_env(:arc, :timeout, 10_000),
       max_retries: Application.get_env(:arc, :max_retries, 3),
       backoff_factor: Application.get_env(:arc, :backoff_factor, 1000),
-      backoff_max: Application.get_env(:arc, :backoff_max, 30_000)
+      backoff_max: Application.get_env(:arc, :backoff_max, 30_000),
+      proxy: Application.get_env(:arc, :proxy, {}),
+      pool: false
     ]
 
     request(remote_path, options)
