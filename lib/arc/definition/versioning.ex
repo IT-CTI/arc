@@ -9,11 +9,16 @@ defmodule Arc.Definition.Versioning do
   def resolve_file_name(definition, version, {file, scope}) do
     name = definition.filename(version, {file, scope})
     conversion = definition.transform(version, {file, scope})
+    filename =
+      case file do
+        %{filename: filename} -> filename
+        file -> file.file_name
+      end
 
     case conversion do
       :skip -> nil
       {_, _, ext} -> "#{name}.#{ext}"
-      _ -> "#{name}#{Path.extname(file.file_name)}"
+      _ -> "#{name}#{Path.extname(filename)}"
     end
   end
 
