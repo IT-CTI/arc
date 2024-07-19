@@ -42,7 +42,7 @@ defmodule Arc.Mixfile do
   defp deps do
     [
       {:hackney, "~> 1.0"},
-      {:mime, "~> 1.2"},
+      {:mime, "2.0.5"},
 
       # If using Amazon S3
       {:ex_aws, "~> 2.0", optional: true},
