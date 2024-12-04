@@ -23,6 +23,7 @@ defmodule Arc.Actions.Store do
     case definition.validate({file, scope}) do
       true -> put_versions(definition, {file, scope})
       {:error, error} when is_atom(error) -> {:error, error}
+      {:error, error, reason} when is_atom(error) and is_binary(reason) -> {:error, error, reason}
       _ -> {:error, :invalid_file}
     end
   end
